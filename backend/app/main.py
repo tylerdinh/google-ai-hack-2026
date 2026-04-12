@@ -136,13 +136,22 @@ def _build_council_proposal(ticker: str, intent: str, analysis_text: str) -> str
     )
 
 
-def _extract_final_text(message_history: list[dict]) -> str:
-    for msg in reversed(message_history):
+def _extract_all_text(message_history: list[dict]) -> str:
+    """Collect text from every response message in order and join them.
+
+    The agent produces multiple response messages — one for the intro, one after
+    each tool call (per-tool analysis paragraph), and one for the conclusion.
+    Concatenating them reconstructs the full report.
+    """
+    chunks = []
+    for msg in message_history:
         if msg.get("kind") == "response" and msg.get("parts"):
             for part in msg["parts"]:
                 if part.get("part_kind") == "text" and part.get("content"):
-                    return part["content"]
-    return ""
+                    text = part["content"].strip()
+                    if text:
+                        chunks.append(text)
+    return "\n\n".join(chunks)
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +306,7 @@ async def analyze_stock(
             result = agent_task.result()
             message_history = json.loads(result)
             images = deps.image_store
-            analysis_text = _extract_final_text(message_history)
+            analysis_text = _extract_all_text(message_history)
 
             yield sse({
                 "type": "agent_done",

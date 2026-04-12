@@ -308,10 +308,11 @@
   .analysis-output {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 20px 24px; margin-top: 12px; font-size: 0.82rem; line-height: 1.7;
-    color: var(--text); white-space: pre-wrap;
+    color: var(--text);
   }
-  .charts { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-  .charts img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+  .analysis-para { white-space: pre-wrap; margin-bottom: 1em; }
+  .analysis-para:last-child { margin-bottom: 0; }
+  .inline-chart { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; margin: 16px 0; }
 
   /* ── Council ── */
   .council-area { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
@@ -819,8 +820,22 @@ function extractBullets(snippet, pageText) {
 }
 
 let braveHeader, braveGrid, agentHeader, agentSteps, councilHeader, councilArea;
-const loadingBoxes = {};
-const toolSteps = {};
+let loadingBoxes = {};
+let pendingStep = null; // { el, doneLabel } — the currently-spinning step, resolved green by the next event
+
+function flushPending() {
+  if (!pendingStep) return;
+  pendingStep.el.className = 'step done';
+  pendingStep.el.innerHTML = '<span class="check">✔</span><span class="label">'+pendingStep.doneLabel+'</span>';
+  pendingStep = null;
+}
+
+function pushStep(label) {
+  const step = el('div', 'step running', '<div class="spinner"></div><span class="label">'+label+'</span>');
+  if (agentSteps) agentSteps.appendChild(step);
+  pendingStep = { el: step, doneLabel: label };
+  return step;
+}
 
 async function run() {
   const ticker = $('ticker').value.trim();
@@ -830,6 +845,8 @@ async function run() {
   $('go').disabled = true;
   out().innerHTML = '';
   braveHeader = braveGrid = agentHeader = agentSteps = councilHeader = councilArea = null;
+  loadingBoxes = {};
+  pendingStep = null;
 
   // Clear active history highlight
   document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
@@ -896,24 +913,60 @@ function handleEvent(d) {
   }
 
   if (d.type === 'tool_call') {
-    const step = el('div', 'step running', '<div class="spinner"></div><span class="label">'+d.label+'</span>');
-    toolSteps[d.tool] = step;
-    if (agentSteps) agentSteps.appendChild(step);
+    flushPending();
+    pushStep(d.label);
     return;
   }
   if (d.type === 'tool_done') {
-    const step = toolSteps[d.tool];
-    if (step) { step.className = 'step done'; step.innerHTML = '<span class="check">✔</span><span class="label">'+d.label+'</span>'; }
+    // Keep spinner — LLM is now analyzing the result. Just update the done label.
+    if (pendingStep) pendingStep.doneLabel = d.label;
+    return;
+  }
+  if (d.type === 'agent_status') {
+    flushPending();
+    pushStep(d.message);
     return;
   }
   if (d.type === 'agent_done') {
+    flushPending();
     if (agentHeader) { agentHeader.innerHTML = '<span class="check">✔</span><span>AI Analysis Complete</span>'; agentHeader.className = 'phase-header done'; }
-    if (d.images?.length) {
-      const chartsDiv = el('div', 'charts');
-      d.images.forEach(img => { const i = document.createElement('img'); i.src='data:image/png;base64,'+img.data; chartsDiv.appendChild(i); });
-      out().appendChild(chartsDiv);
+
+    // Build interleaved report: walk message_history, match tool calls to images in order
+    const chartTools = new Set(['get_price_chart', 'get_technical_chart']);
+    const imgQueue = (d.images || []).slice();
+    const segments = [];
+    for (const msg of (d.message_history || [])) {
+      if (msg.kind !== 'response') continue;
+      const textContent = (msg.parts || [])
+        .filter(p => p.part_kind === 'text' && p.content && p.content.trim())
+        .map(p => p.content.trim())
+        .join('\n\n');
+      if (textContent) segments.push({ type: 'text', content: textContent });
+      for (const p of (msg.parts || [])) {
+        if (p.part_kind === 'tool-call' && chartTools.has(p.tool_name) && imgQueue.length) {
+          segments.push({ type: 'image', data: imgQueue.shift().data });
+        }
+      }
     }
-    if (d.analysis_text) {
+
+    if (segments.length) {
+      out().appendChild(el('div', 'phase-header done', '<span class="check">✔</span><span>Research Summary</span>'));
+      const summaryDiv = el('div', 'analysis-output');
+      for (const seg of segments) {
+        if (seg.type === 'text') {
+          const p = document.createElement('div');
+          p.className = 'analysis-para';
+          p.textContent = seg.content;
+          summaryDiv.appendChild(p);
+        } else {
+          const img = document.createElement('img');
+          img.src = 'data:image/png;base64,' + seg.data;
+          img.className = 'inline-chart';
+          summaryDiv.appendChild(img);
+        }
+      }
+      out().appendChild(summaryDiv);
+    } else if (d.analysis_text) {
       out().appendChild(el('div', 'phase-header done', '<span class="check">✔</span><span>Research Summary</span>'));
       out().appendChild(el('div', 'analysis-output', d.analysis_text));
     }

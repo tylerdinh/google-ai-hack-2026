@@ -100,8 +100,7 @@ class StockDeps:
     event_queue: asyncio.Queue[dict] | None = field(default=None, compare=False)
     # Collects base64-encoded chart images as tools run (for PDF embedding).
     image_store: list[dict] = field(default_factory=list, compare=False)
-    # Phase-tracking for writing-status notifications (set by _emit, read by run_agent_stream).
-    _tool_done_since_last_text: bool = field(default=False, compare=False)
+    # Tracks the last completed tool for writing-status notifications.
     _last_completed_tool_label: str = field(default="", compare=False)
 
 
@@ -127,56 +126,44 @@ _TOOL_FRIENDLY_NAMES: dict[str, str] = {
 
 async def _emit(ctx: RunContext[StockDeps], event: dict) -> None:
     """Push an event onto the SSE queue if one is attached."""
+    if ctx.deps.event_queue is None:
+        return
+    await ctx.deps.event_queue.put(event)
+    # After each tool completes, immediately notify that the LLM is analyzing its output.
     if event.get("type") == "tool_done":
         tool = event.get("tool", "")
-        ctx.deps._tool_done_since_last_text = True
-        ctx.deps._last_completed_tool_label = _TOOL_FRIENDLY_NAMES.get(tool, tool)
-    if ctx.deps.event_queue is not None:
-        await ctx.deps.event_queue.put(event)
+        friendly = _TOOL_FRIENDLY_NAMES.get(tool, tool)
+        ctx.deps._last_completed_tool_label = friendly
+        await ctx.deps.event_queue.put({
+            "type": "agent_status",
+            "message": f"Analyzing {friendly} output...",
+        })
 
 
 async def run_agent_stream(prompt: str | list, deps: StockDeps) -> str:
     """Run the agent, emitting writing-phase status events to the queue.
 
     Emits:
-      agent_status: "Getting analysis started..." — when the LLM starts the intro paragraph.
-      agent_status: "Analyzing <tool> output..." — when the LLM starts writing after each tool.
-      agent_status: "Wrapping things up..." — after the last tool analysis, when wrapping up.
+      agent_status "Writing introduction..." before the agent run begins.
+      agent_status "Analyzing <tool> output..." immediately after each tool completes.
     Tool events (tool_call, tool_done) are emitted by the tools themselves via _emit.
     Returns all_messages_json() as a string when the run completes.
     """
-    phase = "pre"  # pre -> intro -> analysis -> conclusion
+    if deps.event_queue is not None:
+        await deps.event_queue.put({
+            "type": "agent_status",
+            "message": "Writing introduction...",
+        })
 
-    async with agent.run_stream(prompt, deps=deps) as stream:
-        async for _delta in stream.stream_text(delta=True):
-            if deps.event_queue is None:
-                continue
+    result = await agent.run(prompt, deps=deps)
 
-            if deps._tool_done_since_last_text:
-                # First text after a tool completed — agent is now writing the analysis.
-                await deps.event_queue.put({
-                    "type": "agent_status",
-                    "message": f"Analyzing {deps._last_completed_tool_label} output...",
-                })
-                deps._tool_done_since_last_text = False
-                phase = "analysis"
-            elif phase == "pre":
-                # First text ever, no tool has fired yet — agent is writing the introduction.
-                await deps.event_queue.put({
-                    "type": "agent_status",
-                    "message": "Getting analysis started...",
-                })
-                phase = "intro"
-            # else: continuing text in the same phase — no new status to emit.
+    if deps.event_queue is not None:
+        await deps.event_queue.put({
+            "type": "agent_status",
+            "message": "Wrapping things up...",
+        })
 
-        # Stream exhausted. If any tools were called, the final text was the conclusion.
-        if deps._last_completed_tool_label and deps.event_queue is not None:
-            await deps.event_queue.put({
-                "type": "agent_status",
-                "message": "Wrapping things up...",
-            })
-
-    return stream.all_messages_json()
+    return result.all_messages_json()
 
 
 def _generate_png(fig: plt.Figure) -> bytes:
@@ -285,7 +272,7 @@ async def get_price_chart(
         img_bytes = buf.read()
         result = BinaryContent(data=img_bytes, media_type="image/png")
         ctx.deps.image_store.append({"tool": "get_price_chart", "ticker": symbol, "period": period, "interval": interval, "data": base64.b64encode(img_bytes).decode()})
-        await _emit(ctx, {"type": "tool_done", "tool": "get_price_chart", "label": f"Price chart ready ({label_suffix}) — analyzing"})
+        await _emit(ctx, {"type": "tool_done", "tool": "get_price_chart", "label": f"Price chart ready ({label_suffix})"})
         return result
     except ModelRetry:
         raise
@@ -435,7 +422,7 @@ async def get_technical_chart(
         img_bytes = _generate_png(fig)
         result = BinaryContent(data=img_bytes, media_type="image/png")
         ctx.deps.image_store.append({"tool": "get_technical_chart", "ticker": symbol, "period": period, "interval": interval, "data": base64.b64encode(img_bytes).decode()})
-        await _emit(ctx, {"type": "tool_done", "tool": "get_technical_chart", "label": f"Technical chart ready ({period}) — analyzing RSI, MACD, Bollinger Bands"})
+        await _emit(ctx, {"type": "tool_done", "tool": "get_technical_chart", "label": f"Technical chart ready ({period})"})
         return result
     except ModelRetry:
         raise
