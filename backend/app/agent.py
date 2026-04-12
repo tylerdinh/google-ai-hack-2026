@@ -5,12 +5,14 @@ import base64
 import io
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 import matplotlib
 import matplotlib.pyplot as plt
 import mplfinance as mpf
+import httpx
 import pandas as pd
 import yfinance as yf
 from pydantic_ai import Agent, BinaryContent, ModelRetry, RunContext
@@ -27,7 +29,7 @@ user's specific question and intent — every observation you make and every too
 serve to answer that question as directly and concretely as possible.
 
 You have access to tools that generate price charts, technical indicator charts, fetch fundamental
-metrics, and retrieve financial statements.
+metrics, and retrieve financial statements, fetch insider transactions, and analyze insider sentiment.
 
 WORKFLOW — follow this structure exactly, and do not deviate:
 
@@ -121,6 +123,8 @@ _TOOL_FRIENDLY_NAMES: dict[str, str] = {
     "get_technical_chart": "technical indicators",
     "get_stock_fundamentals": "fundamental metrics",
     "get_financial_statements": "financial statements",
+    "get_insider_transactions": "insider transactions",
+    "get_insider_sentiment": "insider sentiment",
 }
 
 
@@ -570,4 +574,136 @@ async def get_financial_statements(
         raise
 
 
+_FH_BASE = "https://finnhub.io/api/v1"
+_FH_KEY = os.getenv("FINNHUB_API_KEY", "")
+
+
+@agent.tool(retries=2)
+async def get_insider_transactions(
+    ctx: RunContext[StockDeps],
+    from_date: str,
+    to_date: str,
+    limit: int,
+    ticker: str | None = None,
+) -> dict[str, Any]:
+    """Fetch recent insider transactions (Form 3/4/5 filings) for a company via Finnhub.
+    A positive 'change' value = shares bought; negative = shares sold.
+    Use this to detect accumulation or distribution by insiders.
+
+    Transaction codes: P=Purchase, S=Sale, M=Option exercise, A=Grant/Award,
+    G=Gift, F=Tax withholding, D=Disposition to company.
+
+    Args:
+        from_date: Start date in YYYY-MM-DD format, e.g. '2024-01-01'.
+            Use a window matching the analysis timeframe: 30–90 days for recent activity,
+            1 year for a broader pattern.
+        to_date: End date in YYYY-MM-DD format, e.g. '2025-01-01'. Use today's date
+            for the most current data.
+        limit: Max number of transactions to return (1–100). Use 20–30 for a focused
+            view; 100 for a comprehensive audit.
+        ticker: Ticker symbol to look up. Omit to use the primary analysis ticker.
+
+    Returns:
+        Dict with 'symbol' and 'data': list of transactions, each with
+        {name, change (shares bought/sold), share (total held after), filingDate,
+        transactionDate, transactionCode, transactionPrice}.
+    """
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", from_date):
+        raise ModelRetry(f"Invalid from_date '{from_date}'. Use YYYY-MM-DD format.")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", to_date):
+        raise ModelRetry(f"Invalid to_date '{to_date}'. Use YYYY-MM-DD format.")
+    if not (1 <= limit <= 100):
+        raise ModelRetry(f"limit must be between 1 and 100, got {limit}.")
+
+    symbol = (ticker or ctx.deps.ticker).upper()
+    await _emit(ctx, {
+        "type": "tool_call",
+        "tool": "get_insider_transactions",
+        "label": f"Fetching insider transactions for {symbol}",
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(
+                f"{_FH_BASE}/stock/insider-transactions",
+                params={"symbol": symbol, "from": from_date, "to": to_date, "token": _FH_KEY},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        transactions = (data.get("data") or [])[:limit]
+        await _emit(ctx, {
+            "type": "tool_done",
+            "tool": "get_insider_transactions",
+            "label": f"Insider transactions loaded ({len(transactions)} filings for {symbol})",
+        })
+        return {"symbol": symbol, "data": transactions}
+    except ModelRetry:
+        raise
+    except Exception:
+        logger.exception("get_insider_transactions failed for %s", symbol)
+        raise
+
+
+@agent.tool(retries=2)
+async def get_insider_sentiment(
+    ctx: RunContext[StockDeps],
+    from_date: str,
+    to_date: str,
+    ticker: str | None = None,
+) -> dict[str, Any]:
+    """Fetch monthly insider sentiment scores (MSPR) for a US company via Finnhub.
+    MSPR = Monthly Share Purchase Ratio, ranges from -100 (most negative) to +100
+    (most positive). Sustained positive MSPR predicts price appreciation in 30–90 days;
+    sustained negative MSPR signals caution.
+
+    Args:
+        from_date: Start date in YYYY-MM-DD format, e.g. '2024-01-01'.
+            Use at least 6–12 months to identify trends; shorter windows for recent signals.
+        to_date: End date in YYYY-MM-DD format, e.g. '2025-01-01'. Use today's date
+            for the most current reading.
+        ticker: Ticker symbol to look up. Omit to use the primary analysis ticker.
+
+    Returns:
+        Dict with 'symbol' and 'data': list of monthly records, each with
+        {year, month, mspr (Monthly Share Purchase Ratio, -100 to +100), change
+        (net shares bought/sold by all insiders that month)}.
+    """
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", from_date):
+        raise ModelRetry(f"Invalid from_date '{from_date}'. Use YYYY-MM-DD format.")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", to_date):
+        raise ModelRetry(f"Invalid to_date '{to_date}'. Use YYYY-MM-DD format.")
+
+    symbol = (ticker or ctx.deps.ticker).upper()
+    await _emit(ctx, {
+        "type": "tool_call",
+        "tool": "get_insider_sentiment",
+        "label": f"Fetching insider sentiment (MSPR) for {symbol}",
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(
+                f"{_FH_BASE}/stock/insider-sentiment",
+                params={"symbol": symbol, "from": from_date, "to": to_date, "token": _FH_KEY},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        monthly = data.get("data") or []
+        await _emit(ctx, {
+            "type": "tool_done",
+            "tool": "get_insider_sentiment",
+            "label": f"Insider sentiment loaded ({len(monthly)} months of MSPR for {symbol})",
+        })
+        return {
+            "symbol": symbol,
+            "mspr_definition": "MSPR ranges -100 (max selling) to +100 (max buying). Positive = net insider accumulation. Sustained positive MSPR predicts price rise in 30-90 days.",
+            "data": monthly,
+        }
+    except ModelRetry:
+        raise
+    except Exception:
+        logger.exception("get_insider_sentiment failed for %s", symbol)
+        raise
 
