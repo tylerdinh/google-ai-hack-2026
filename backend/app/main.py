@@ -381,6 +381,106 @@ async def analyze_stock(
     )
 
 
+# ---------------------------------------------------------------------------
+# Stock Market Data Endpoints (for frontend UI)
+# ---------------------------------------------------------------------------
+
+import yfinance as yf
+
+
+def fetch_yahoo_quote_for_symbol(symbol: str) -> dict:
+    """Fetch the latest quote for a symbol from Yahoo Finance."""
+    try:
+        ticker = yf.Ticker(symbol)
+        data = ticker.info
+        return {
+            symbol: {
+                "symbol": symbol,
+                "name": data.get("longName", symbol),
+                "close": data.get("regularMarketPrice", 0),
+                "previous_close": data.get("regularMarketPreviousClose", 0),
+                "open": data.get("open", 0),
+                "change": (data.get("regularMarketPrice", 0) - data.get("regularMarketPreviousClose", 0)) if data.get("regularMarketPrice") else 0,
+                "percent_change": data.get("regularMarketChangePercent", 0) * 100 if data.get("regularMarketChangePercent") else 0,
+            }
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch quote for {symbol}: {e}")
+        return {symbol: {"symbol": symbol, "name": symbol, "close": 0, "change": 0, "percent_change": 0}}
+
+
+def search_yahoo_symbols(query: str) -> list[dict]:
+    """Search for stock symbols using Yahoo Finance."""
+    try:
+        ticker = yf.Ticker(query)
+        info = ticker.info
+        symbol = info.get("symbol", query.upper())
+        name = info.get("longName", symbol)
+        exchange = info.get("exchange", "")
+        return [{"symbol": symbol, "name": name, "exchange": exchange}]
+    except Exception as e:
+        logger.warning(f"Search failed for {query}: {e}")
+        return []
+
+
+def fetch_yahoo_candles(symbol: str, interval: str, outputsize: int) -> dict:
+    """Fetch OHLC candle data from Yahoo Finance."""
+    try:
+        ticker = yf.Ticker(symbol)
+        
+        if interval == "5min":
+            hist = ticker.history(period="1d", interval="5m")
+        elif interval == "1hour":
+            hist = ticker.history(period="30d", interval="1h")
+        elif interval == "1day":
+            hist = ticker.history(period="1y", interval="1d")
+        elif interval == "1week":
+            hist = ticker.history(period="5y", interval="1wk")
+        else:
+            hist = ticker.history(period="1mo", interval="1d")
+        
+        if hist.empty:
+            return {"values": []}
+        
+        values = []
+        for date, row in hist.iterrows():
+            values.append({
+                "timestamp": date.isoformat(),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+            })
+        
+        return {"values": values[-outputsize:] if outputsize else values}
+    except Exception as e:
+        logger.warning(f"Failed to fetch candles for {symbol}: {e}")
+        return {"values": []}
+
+
+@app.get("/api/stocks/quotes", tags=["Stock Market Data"])
+async def get_stock_quotes(symbols: str) -> dict:
+    """Get current stock quotes for given symbols."""
+    symbol_list = [s.strip().upper() for s in symbols.split(",")]
+    result = {}
+    for symbol in symbol_list:
+        quote_data = fetch_yahoo_quote_for_symbol(symbol)
+        result.update(quote_data)
+    return result
+
+
+@app.get("/api/stocks/time-series", tags=["Stock Market Data"])
+async def get_time_series(symbol: str, interval: str = "1day", outputsize: int = 30) -> dict:
+    """Get historical OHLC data for a stock."""
+    return fetch_yahoo_candles(symbol.upper(), interval, outputsize)
+
+
+@app.get("/api/stocks/search", tags=["Stock Market Data"])
+async def search_stocks(query: str) -> list[dict]:
+    """Search for stocks by symbol or company name."""
+    return search_yahoo_symbols(query.upper())
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
