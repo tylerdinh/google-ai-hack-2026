@@ -260,6 +260,12 @@ function AnalysisOutput({ events }: { events: SSEEvent[] }) {
               {(agentDone.bullets as string[]).map((b, i) => (
                 <div key={i} className="bullet-item">{b}</div>
               ))}
+              {!agentDone.is_binary && agentDone.direct_answer && (
+                <>
+                  <hr className="direct-answer-divider" />
+                  <div className="direct-answer">{agentDone.direct_answer}</div>
+                </>
+              )}
             </div>
           )}
           {(segments.length > 0 || agentDone.analysis_text) && (
