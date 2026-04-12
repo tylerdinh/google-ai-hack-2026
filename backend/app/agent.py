@@ -259,7 +259,7 @@ async def get_price_chart(
     symbol = (ticker or ctx.deps.ticker).upper()
     label_suffix = f"{period} / {interval}"
     await _emit(ctx, {"type": "tool_call", "tool": "get_price_chart", "label": f"Fetching price chart for {symbol} ({label_suffix})"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         hist = yf.Ticker(symbol).history(period=period, interval=interval)
         if hist.empty:
@@ -370,7 +370,7 @@ async def get_technical_chart(
     symbol = (ticker or ctx.deps.ticker).upper()
     label_suffix = f"{period} / {interval} | RSI({rsi_period}) BB({bb_period},{bb_std}) MACD({macd_fast},{macd_slow},{macd_signal})"
     await _emit(ctx, {"type": "tool_call", "tool": "get_technical_chart", "label": f"Generating technical indicators for {symbol} ({period})"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         hist = yf.Ticker(symbol).history(period=period, interval=interval)
         if hist.empty:
@@ -460,7 +460,7 @@ async def get_stock_fundamentals(
     """
     symbol = (ticker or ctx.deps.ticker).upper()
     await _emit(ctx, {"type": "tool_call", "tool": "get_stock_fundamentals", "label": f"Fetching fundamental metrics for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         info = yf.Ticker(symbol).info
         fields: dict[str, Any] = {
@@ -559,7 +559,7 @@ async def get_financial_statements(
     symbol = (ticker or ctx.deps.ticker).upper()
     freq_label = frequency.capitalize()
     await _emit(ctx, {"type": "tool_call", "tool": "get_financial_statements", "label": f"Fetching {freq_label} financial statements for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         stock = yf.Ticker(symbol)
         if frequency == "quarterly":

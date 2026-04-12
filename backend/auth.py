@@ -4,11 +4,15 @@ Provides:
 - get_current_user: FastAPI dependency that validates Supabase JWT tokens
 - get_optional_user: same but returns None instead of 401 when unauthenticated
 """
+import logging
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AuthApiError
 
 from supabase_client import get_admin_client
+
+logger = logging.getLogger(__name__)
 
 # FastAPI security scheme — adds Authorize button to Swagger UI
 security = HTTPBearer()
@@ -44,11 +48,15 @@ async def get_optional_user(request: Request):
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        logger.info("Auth(optional): no Bearer header — running unauthenticated")
         return None
     token = auth_header[7:]
     try:
-        return await _resolve_user(token)
-    except HTTPException:
+        user = await _resolve_user(token)
+        logger.info("Auth(optional): resolved user %s", user.id)
+        return user
+    except HTTPException as e:
+        logger.warning("Auth(optional): token rejected (%s) — running unauthenticated", e.detail)
         return None
 
 
@@ -59,6 +67,7 @@ async def get_optional_user(request: Request):
 async def _resolve_user(token: str):
     """Validate a JWT with Supabase and return the user object."""
     if not token:
+        logger.warning("Auth: no token provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization token",
@@ -67,14 +76,25 @@ async def _resolve_user(token: str):
     try:
         admin_client = get_admin_client()
         response = admin_client.auth.get_user(token)
+        if not response or not response.user:
+            logger.warning("Auth: get_user returned empty response")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not retrieve user from token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return response.user
+    except HTTPException:
+        raise
     except AuthApiError as e:
+        logger.warning("Auth: AuthApiError — %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid or expired token: {e}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("Auth: unexpected error — %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",
