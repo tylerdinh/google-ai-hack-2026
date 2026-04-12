@@ -404,7 +404,7 @@ export default function WatchlistPage() {
             letterSpacing: '-0.01em',
           }}
         >
-          Consilium
+          Boardroom
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {session?.user?.email && (
@@ -424,7 +424,7 @@ export default function WatchlistPage() {
       </header>
 
       {/* Page body */}
-      <div style={{ maxWidth: '820px', margin: '0 auto', padding: '32px 24px 64px' }}>
+      <div style={{ maxWidth: '1020px', margin: '0 auto', padding: '32px 24px 64px' }}>
 
         {/* Page title + action bar */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '28px' }}>

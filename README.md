@@ -1,4 +1,4 @@
-# Consilium
+# Boardroom
 
 An AI-powered stock research platform. Ask questions about any stock and get web-researched analysis, bullet-point summaries, and — for buy/sell/hold decisions — a multi-agent council debate with a final verdict.
 

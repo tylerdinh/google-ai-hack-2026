@@ -168,8 +168,6 @@ function AnalysisOutput({ events }: { events: SSEEvent[] }) {
   const agentPhase    = phaseEvents.find(e => e.phase === 'agent')
   const councilPhase  = phaseEvents.find(e => e.phase === 'council')
 
-  const [showFull, setShowFull] = useState(false)
-
   const braveMap = new Map<number, SSEEvent>()
   for (const e of braveEvents) {
     if (e.type === 'brave_result') braveMap.set(e.rank, e)
@@ -193,6 +191,17 @@ function AnalysisOutput({ events }: { events: SSEEvent[] }) {
     }
   }
   const hasImages = segments.some(s => s.type === 'image')
+
+    // 1. Track whether initial state has been set
+  const [showFull, setShowFull] = useState(false)
+  const initializedRef = useRef(false)
+
+  useEffect(() => {
+    if (!initializedRef.current && agentDone) {
+      initializedRef.current = true
+      setShowFull(hasImages || !agentDone.bullets?.length)
+    }
+  }, [agentDone, hasImages])
 
   return (
     <div>
@@ -292,12 +301,12 @@ function AnalysisOutput({ events }: { events: SSEEvent[] }) {
                 className="analysis-toggle"
                 onClick={() => setShowFull(v => !v)}
               >
-                {showFull || hasImages || !agentDone.bullets?.length
+                {showFull
                   ? <><ChevronUp size={13} /> Hide full analysis</>
                   : <><ChevronDown size={13} /> View full analysis</>
                 }
               </button>
-              <div className={`full-analysis ${showFull || hasImages || !agentDone.bullets?.length ? '' : 'hidden'}`}>
+              <div className={`full-analysis ${showFull ? '' : 'hidden'}`}>
                 {segments.length > 0
                   ? segments.map((seg, i) =>
                       seg.type === 'text'
@@ -613,7 +622,7 @@ export default function StockDetailPage() {
             letterSpacing: '-0.01em',
           }}
         >
-          Consilium
+          Boardroom
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {session?.user?.email && (
@@ -630,7 +639,7 @@ export default function StockDetailPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 24px 64px' }}>
+      <div style={{ maxWidth: '1020px', margin: '0 auto', padding: '28px 24px 64px' }}>
 
         {/* Back link */}
         <Link
