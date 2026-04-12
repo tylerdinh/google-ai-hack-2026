@@ -335,6 +335,18 @@ async def root():
     return {"message": "Stock Research API — see /docs"}
 
 
+@app.get("/stocks.html")
+async def stocks_page():
+    f = FRONTEND_DIR / "stocks.html"
+    return FileResponse(str(f)) if f.exists() else {"error": "not found"}
+
+
+@app.get("/stock.html")
+async def stock_page():
+    f = FRONTEND_DIR / "stock.html"
+    return FileResponse(str(f)) if f.exists() else {"error": "not found"}
+
+
 @app.post("/research/analyze", tags=["Research"])
 async def analyze_stock(
     request: AnalyzeRequest,

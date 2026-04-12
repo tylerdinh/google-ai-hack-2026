@@ -58,7 +58,7 @@ async def get_user_analyses(user_id: str, limit: int = 30) -> list[dict[str, Any
         client = get_admin_client()
         result = (
             client.table(_TABLE)
-            .select("id, ticker_name, prompt, council_verdict, approve_count, reject_count, created_at")
+            .select("id, ticker_name, prompt, advice, council_verdict, approve_count, reject_count, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .limit(limit)
