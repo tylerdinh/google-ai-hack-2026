@@ -19,7 +19,7 @@ from pydantic_ai import BinaryContent
 
 load_dotenv()
 
-from app.agent import StockDeps, agent                              # noqa: E402
+from app.agent import StockDeps, run_agent_stream              # noqa: E402
 from app.brave import gather_brave_context, compile_context_text, router as brave_router  # noqa: E402
 from app.council import CouncilOrchestrator                         # noqa: E402
 from app.database import save_analysis, get_user_analyses, get_analysis_by_id  # noqa: E402
@@ -101,18 +101,23 @@ def _build_prompt(ticker: str, request: AnalyzeRequest, brave_context: str) -> s
                 )
             image_parts.append(BinaryContent(data=img_bytes, media_type=item.media_type))
 
+    user_intent = request.intent or "Provide a comprehensive stock analysis."
+
     intro = (
-        f"Please conduct a comprehensive deep research analysis of **{ticker}**.\n"
-        "Use your tools freely to gather price charts, technical indicators, "
-        "fundamental metrics, and financial statements. "
-        "Analyze every chart image you receive carefully before drawing conclusions."
+        f"Stock to analyze: {ticker}\n"
+        f"User's question / intent: \"{user_intent}\"\n\n"
+        "Follow the workflow in your instructions exactly: write your introduction first, "
+        "then call each tool one at a time and write your analysis of its result before "
+        "calling the next tool, then close with a conclusion that directly answers the "
+        "user's question above. Choose chart periods and other parameters to best serve "
+        "the user's specific intent."
     )
 
     if brave_context:
-        intro += f"\n\n{brave_context}"
+        intro += f"\n\nReal-time web research context (use this as background, not a substitute for tool calls):\n\n{brave_context}"
 
     if extra_text_lines:
-        intro += "\n\n**Additional context from the user:**\n" + "\n".join(extra_text_lines)
+        intro += "\n\nAdditional context from the user:\n" + "\n".join(extra_text_lines)
 
     if image_parts:
         return [intro, *image_parts]
@@ -236,7 +241,7 @@ async def analyze_stock(
         deps = StockDeps(ticker=ticker, event_queue=queue)
 
         agent_task: asyncio.Task = asyncio.create_task(
-            agent.run(prompt, deps=deps)
+            run_agent_stream(prompt, deps)
         )
 
         analysis_text = ""
@@ -259,7 +264,7 @@ async def analyze_stock(
                 raise exc
 
             result = agent_task.result()
-            message_history = json.loads(result.all_messages_json())
+            message_history = json.loads(result)
             images = deps.image_store
             analysis_text = _extract_final_text(message_history)
 
