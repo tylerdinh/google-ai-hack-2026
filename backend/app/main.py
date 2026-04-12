@@ -22,7 +22,10 @@ load_dotenv()
 from app.agent import StockDeps, agent                              # noqa: E402
 from app.brave import gather_brave_context, compile_context_text, router as brave_router  # noqa: E402
 from app.council import CouncilOrchestrator                         # noqa: E402
-from app.database import save_analysis, get_user_analyses, get_analysis_by_id  # noqa: E402
+from app.database import (  # noqa: E402
+    save_analysis, get_user_analyses, get_analysis_by_id,
+    upsert_stock, get_user_stocks, delete_stock,
+)
 from app.models import AnalyzeRequest                               # noqa: E402
 from auth import get_current_user, get_optional_user                # noqa: E402
 from supabase_client import validate_supabase_config                # noqa: E402
@@ -149,6 +152,34 @@ async def me(user=Depends(get_current_user)):
         "email": user.email,
         "created_at": user.created_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# Watchlist (stocks) routes
+# ---------------------------------------------------------------------------
+
+@app.get("/stocks", tags=["Stocks"])
+async def list_stocks(user=Depends(get_current_user)):
+    """Return the authenticated user's stock watchlist."""
+    rows = await get_user_stocks(user.id)
+    return {"stocks": rows, "total": len(rows)}
+
+
+@app.post("/stocks", tags=["Stocks"], status_code=201)
+async def add_stock(body: dict, user=Depends(get_current_user)):
+    """Add a ticker to the user's watchlist."""
+    ticker = (body.get("ticker_name") or "").upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=422, detail="ticker_name is required")
+    await upsert_stock(user.id, ticker, body.get("display_name"))
+    return {"ticker_name": ticker}
+
+
+@app.delete("/stocks/{ticker_name}", tags=["Stocks"])
+async def remove_stock(ticker_name: str, user=Depends(get_current_user)):
+    """Remove a ticker from the user's watchlist."""
+    await delete_stock(user.id, ticker_name.upper())
+    return {"deleted": ticker_name.upper()}
 
 
 # ---------------------------------------------------------------------------
@@ -319,11 +350,13 @@ async def analyze_stock(
         # ── Persist to database (authenticated users only) ────────────
         analysis_id: str | None = None
         if user_id and council_outcome:
+            # Satisfy the FK constraint: ensure the stock is in the watchlist
+            await upsert_stock(user_id, ticker)
             analysis_id = await save_analysis(
                 user_id=user_id,
-                ticker=ticker,
-                intent=intent,
-                analysis_text=analysis_text,
+                ticker_name=ticker,
+                prompt=intent,
+                advice=analysis_text,
                 council_verdict=council_outcome.get("decision", "rejected"),
                 approve_count=council_outcome.get("approve", 0),
                 reject_count=council_outcome.get("reject", 0),

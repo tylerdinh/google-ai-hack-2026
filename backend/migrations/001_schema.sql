@@ -1,18 +1,18 @@
 -- ============================================================
--- Run this in: Supabase Dashboard → SQL Editor → New Query
+-- Matches the existing Supabase table schema exactly.
+-- Only run this if the table does not already exist.
 -- ============================================================
 
--- Analyses table
 create table if not exists public.analyses (
   id             uuid        primary key default gen_random_uuid(),
-  user_id        uuid        not null references auth.users(id) on delete cascade,
-  ticker         text        not null,
-  intent         text        not null,
-  analysis_text  text,
-  council_verdict text        check (council_verdict in ('approved', 'rejected')),
-  approve_count  int         not null default 0,
-  reject_count   int         not null default 0,
-  created_at     timestamptz not null default now()
+  user_id        uuid        references auth.users(id) on delete cascade,
+  ticker_name    text,
+  prompt         text,
+  advice         text,
+  created_at     timestamptz not null default now(),
+  approve_count  int4,
+  reject_count   int4,
+  council_verdict text
 );
 
 -- Indexes
@@ -22,7 +22,6 @@ create index if not exists analyses_created_at_idx on public.analyses (created_a
 -- Row Level Security
 alter table public.analyses enable row level security;
 
--- Users can only see / insert / delete their own rows
 create policy "select own analyses"
   on public.analyses for select
   using (auth.uid() = user_id);

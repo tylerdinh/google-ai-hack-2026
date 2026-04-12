@@ -114,7 +114,7 @@ async def get_price_chart(
     """
     symbol = (ticker or ctx.deps.ticker).upper()
     await _emit(ctx, {"type": "tool_call", "tool": "get_price_chart", "label": f"Fetching price chart for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         hist = yf.Ticker(symbol).history(period=period)
         if hist.empty:
@@ -158,7 +158,7 @@ async def get_technical_chart(
     """
     symbol = (ticker or ctx.deps.ticker).upper()
     await _emit(ctx, {"type": "tool_call", "tool": "get_technical_chart", "label": f"Generating technical indicators for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         hist = yf.Ticker(symbol).history(period=period)
         if hist.empty:
@@ -243,7 +243,7 @@ async def get_stock_fundamentals(
     """
     symbol = (ticker or ctx.deps.ticker).upper()
     await _emit(ctx, {"type": "tool_call", "tool": "get_stock_fundamentals", "label": f"Fetching fundamental metrics for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         info = yf.Ticker(symbol).info
         fields: dict[str, Any] = {
@@ -323,7 +323,7 @@ async def get_financial_statements(
     """
     symbol = (ticker or ctx.deps.ticker).upper()
     await _emit(ctx, {"type": "tool_call", "tool": "get_financial_statements", "label": f"Fetching financial statements for {symbol}"})
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
     try:
         stock = yf.Ticker(symbol)
         result = {
