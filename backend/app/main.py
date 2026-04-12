@@ -245,6 +245,31 @@ async def _summarize_to_bullets(ticker: str, analysis_text: str) -> list[str]:
         return []
 
 
+async def _generate_direct_answer(intent: str, ticker: str, analysis_text: str) -> str:
+    """Return a 1-2 sentence direct answer to the user's specific question."""
+    from google import genai
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    prompt = (
+        f"A user asked about {ticker}: \"{intent}\"\n\n"
+        f"Based on this analysis:\n{analysis_text[:4000]}\n\n"
+        "Write a direct, specific answer to their question in 1-2 sentences. "
+        "Be concrete — include numbers, dates, or targets where relevant. "
+        "Do not start with 'Based on' or refer to 'the analysis'. "
+        "Just answer the question directly."
+    )
+    try:
+        resp = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        return (resp.text or "").strip()
+    except Exception:
+        logger.warning("Direct answer generation failed", exc_info=True)
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -423,6 +448,11 @@ async def analyze_stock(
             # Generate bullet summary (passed to client; full text goes to council)
             bullets = await _summarize_to_bullets(ticker, analysis_text)
 
+            # For non-binary questions add a direct answer to the specific query
+            direct_answer = ""
+            if not is_binary:
+                direct_answer = await _generate_direct_answer(intent, ticker, analysis_text)
+
             yield sse({
                 "type": "agent_done",
                 "ticker": ticker,
@@ -430,6 +460,8 @@ async def analyze_stock(
                 "images": images,
                 "analysis_text": analysis_text,
                 "bullets": bullets,
+                "direct_answer": direct_answer,
+                "is_binary": is_binary,
             })
 
         except Exception as exc:
@@ -539,8 +571,20 @@ def search_yahoo_symbols(query: str) -> list[dict]:
     try:
         ticker = yf.Ticker(query)
         info = ticker.info
+
+        # yfinance always returns a dict even for non-existent tickers.
+        # A real ticker has at minimum a market price or a company name.
+        has_price = (
+            info.get("regularMarketPrice") is not None
+            or info.get("currentPrice") is not None
+            or info.get("previousClose") is not None
+        )
+        has_name = bool(info.get("longName") or info.get("shortName"))
+        if not (has_price or has_name):
+            return []
+
         symbol = info.get("symbol", query.upper())
-        name = info.get("longName", symbol)
+        name = info.get("longName") or info.get("shortName") or symbol
         exchange = info.get("exchange", "")
         return [{"symbol": symbol, "name": name, "exchange": exchange}]
     except Exception as e:

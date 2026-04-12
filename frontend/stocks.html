@@ -401,7 +401,10 @@
           if (!res.ok) throw new Error();
           const results = await res.json();
           renderSuggestions(results);
-          searchStatus.textContent = results.length ? '' : 'No results.';
+          if (!results.length) {
+            searchSuggestions.innerHTML = '<div class="rounded-xl border border-dashed border-red-500/30 px-3 py-2 text-sm text-red-400">Ticker not found.</div>';
+          }
+          searchStatus.textContent = '';
         } catch {
           searchSuggestions.innerHTML = '';
           searchStatus.textContent = 'Search unavailable.';
