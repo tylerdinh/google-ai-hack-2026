@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Detail | Placeholder Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              canvas: '#191626',
+              panel: '#332042',
+              panelBorder: '#7a5a89',
+              lavender: '#ae7db7',
+              success: '#4fc329',
+              danger: '#e35658'
+            },
+            fontFamily: {
+              display: ['Bree Serif', 'serif'],
+              body: ['Lexend', 'sans-serif']
+            },
+            boxShadow: {
+              glow: '0 0 0 1px rgba(185, 135, 199, 0.24), 0 16px 34px rgba(9, 7, 16, 0.5)'
+            }
+          }
+        }
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=Lexend:wght@300;400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-image:
+          radial-gradient(circle at 1px 1px, rgba(168, 128, 184, 0.17) 1px, transparent 1px),
+          linear-gradient(162deg, #151321 0%, #201a31 52%, #2a213b 100%);
+        background-size: 18px 18px, cover;
+      }
+
+      html,
+      body,
+      * {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+
+      html::-webkit-scrollbar,
+      body::-webkit-scrollbar,
+      *::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+      }
+
+      .glass-card {
+        background: linear-gradient(138deg, rgba(100, 65, 122, 0.48), rgba(51, 33, 66, 0.7));
+        border: 1px solid rgba(182, 140, 201, 0.33);
+        box-shadow: inset 0 1px 0 rgba(241, 220, 252, 0.14), 0 16px 32px rgba(10, 8, 18, 0.52);
+        backdrop-filter: blur(14px);
+      }
+
+      .grid-fade {
+        background-image:
+          linear-gradient(rgba(176, 127, 194, 0.18) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(176, 127, 194, 0.18) 1px, transparent 1px);
+        background-size: 42px 42px;
+      }
+
+      .analysis-shell {
+        background: linear-gradient(160deg, rgba(26, 19, 37, 0.86), rgba(38, 27, 50, 0.8));
+        border: 1px solid rgba(174, 125, 183, 0.32);
+      }
+
+      .timeframe-menu {
+        background: linear-gradient(160deg, rgba(42, 29, 58, 0.98), rgba(35, 24, 49, 0.98));
+        border: 1px solid rgba(182, 140, 201, 0.34);
+        box-shadow: 0 18px 36px rgba(10, 8, 18, 0.42);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen font-body text-white">
+    <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 pb-4 pt-0 sm:pb-5 sm:pt-0">
+      <header class="relative left-1/2 mb-3 w-screen -translate-x-1/2 flex items-center justify-between gap-4 rounded-b-xl border-b border-panelBorder/25 bg-[#23182f]/95 px-6 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.18)] sm:px-8">
+        <h1 class="font-display text-3xl leading-tight text-lavender sm:text-4xl">idk what do we call this</h1>
+        <a
+          href="index.html"
+          class="rounded-full border border-panelBorder/70 bg-white/5 px-4 py-2 text-sm font-semibold text-lavender transition hover:border-lavender/80"
+        >
+          Log out
+        </a>
+      </header>
+
+      <a
+        href="stocks.html"
+        class="glass-card mb-2 inline-flex w-fit self-start rounded-lg px-3 py-2 text-xs text-lavender transition hover:border-lavender/80 sm:text-sm"
+      >
+        Back to list
+      </a>
+
+      <section id="summary" class="glass-card mb-2 grid grid-cols-1 items-center gap-2 rounded-2xl p-3 sm:grid-cols-[1.5fr_1fr_1fr] sm:gap-3 sm:p-4"></section>
+
+      <section id="chart-section" class="glass-card mb-2 flex-1 rounded-2xl p-0">
+        <div class="relative ml-0 inline-flex">
+          <button
+            id="timeframe-button"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            class="inline-flex items-center gap-2 rounded-br-2xl rounded-tl-2xl border-b border-r border-lavender/30 bg-white/5 px-3 py-2 text-xl font-semibold text-lavender/85 outline-none transition hover:bg-white/8 sm:px-5 sm:py-3 sm:text-2xl"
+          >
+            <span id="timeframe-label">Last week</span>
+            <span class="text-lg leading-none opacity-80">▾</span>
+          </button>
+
+          <div id="timeframe-menu" class="timeframe-menu absolute left-0 top-full z-20 mt-2 hidden min-w-[12rem] overflow-hidden rounded-2xl">
+            <button type="button" class="timeframe-option block w-full px-4 py-3 text-left text-xl text-zinc-100 transition hover:bg-white/10 sm:text-2xl" data-range="today">
+              Today
+            </button>
+            <button type="button" class="timeframe-option block w-full px-4 py-3 text-left text-xl text-zinc-100 transition hover:bg-white/10 sm:text-2xl" data-range="lastWeek">
+              Last week
+            </button>
+            <button type="button" class="timeframe-option block w-full px-4 py-3 text-left text-xl text-zinc-100 transition hover:bg-white/10 sm:text-2xl" data-range="lastMonth">
+              Last month
+            </button>
+            <button type="button" class="timeframe-option block w-full px-4 py-3 text-left text-xl text-zinc-100 transition hover:bg-white/10 sm:text-2xl" data-range="lastYear">
+              Last year
+            </button>
+          </div>
+        </div>
+
+        <div class="h-[240px] rounded-b-2xl border-t border-lavender/25 p-3 sm:h-[300px] sm:p-4">
+          <div
+            id="chart-area"
+            class="grid-fade flex h-full w-full items-center justify-center rounded-xl border border-dashed border-lavender/45 bg-canvas/25 text-center text-sm text-zinc-300"
+          >
+            Loading chart...
+          </div>
+        </div>
+      </section>
+
+      <section class="glass-card rounded-2xl p-3 sm:p-4">
+        <form id="analyze-form">
+          <div class="flex items-center gap-2 sm:gap-3">
+            <textarea
+              id="analysis-input"
+              rows="1"
+              placeholder="What do you want me to analyze?"
+              class="min-h-[4.5rem] w-full resize-none overflow-hidden bg-transparent px-2 py-4 font-display text-2xl leading-[1.35] text-zinc-100 placeholder-lavender/100 outline-none sm:min-h-[5.25rem] sm:py-5 sm:text-4xl"
+            ></textarea>
+            <button
+              type="submit"
+              aria-label="Submit query"
+              class="shrink-0 rounded-xl border border-panelBorder/70 bg-white/8 px-4 py-2 text-sm font-semibold text-lavender transition hover:border-lavender/80 hover:bg-white/12 sm:px-5 sm:py-3 sm:text-base"
+            >
+              &rarr;
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section id="analysis-output" class="analysis-shell mt-3 hidden min-h-[68vh] rounded-2xl p-4 text-sm text-zinc-400 sm:min-h-[calc(100vh-9rem)] sm:p-6 sm:text-base">
+        Response placeholder
+      </section>
+    </main>
+
+    <script>
+      const API_BASE_URL = window.STOCK_API_BASE_URL || 'http://127.0.0.1:8000';
+
+      const params = new URLSearchParams(window.location.search);
+      const symbol = (params.get('symbol') || 'AAPL').toUpperCase();
+      const selectedSymbol = symbol;
+      const summaryEl = document.getElementById('summary');
+      const chartArea = document.getElementById('chart-area');
+      const chartSection = document.getElementById('chart-section');
+      const timeframeButton = document.getElementById('timeframe-button');
+      const timeframeLabel = document.getElementById('timeframe-label');
+      const timeframeMenu = document.getElementById('timeframe-menu');
+      const timeframeOptions = Array.from(document.querySelectorAll('.timeframe-option'));
+      const analyzeForm = document.getElementById('analyze-form');
+      const analysisInput = document.getElementById('analysis-input');
+      const analysisOutput = document.getElementById('analysis-output');
+      let currentQuote = null;
+      let currentRangeKey = 'lastWeek';
+
+      const TIMEFRAME_CONFIG = {
+        today: { interval: '5min', outputsize: 78 },
+        lastWeek: { interval: '1hour', outputsize: 28 },
+        lastMonth: { interval: '1day', outputsize: 30 },
+        lastYear: { interval: '1week', outputsize: 52 }
+      };
+
+      function toNumber(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+      }
+
+      function toCurrency(value) {
+        return `$${toNumber(value).toFixed(2)}`;
+      }
+
+      function signedValue(value) {
+        return `$${Math.abs(toNumber(value)).toFixed(2)}`;
+      }
+
+      function signedPercent(value) {
+        return `${Math.abs(toNumber(value)).toFixed(2)}%`;
+      }
+
+      function getSeriesChange(values) {
+        if (!Array.isArray(values) || values.length < 2) {
+          return null;
+        }
+
+        const closes = values
+          .slice()
+          .reverse()
+          .map((entry) => toNumber(entry.close))
+          .filter(Number.isFinite);
+
+        if (closes.length < 2) {
+          return null;
+        }
+
+        const firstClose = closes[0];
+        const lastClose = closes[closes.length - 1];
+        const change = lastClose - firstClose;
+        const percent = firstClose ? (change / firstClose) * 100 : 0;
+
+        return {
+          lastClose,
+          change,
+          percent,
+          isUp: change >= 0
+        };
+      }
+
+      function renderSummary(quote, values = []) {
+        const seriesChange = getSeriesChange(values);
+        const fallbackChange = toNumber(quote.change);
+        const fallbackPercent = toNumber(quote.percent_change);
+        const change = seriesChange ? seriesChange.change : fallbackChange;
+        const percent = seriesChange ? seriesChange.percent : fallbackPercent;
+        const isUp = seriesChange ? seriesChange.isUp : change >= 0;
+        const trendClass = isUp ? 'text-success' : 'text-danger';
+        const name = quote.name ? `${quote.name} (${selectedSymbol})` : selectedSymbol;
+        const price = toCurrency(seriesChange ? seriesChange.lastClose : quote.close || quote.previous_close || quote.open || 0);
+        const delta = `${isUp ? '▲' : '▼'} ${signedValue(change)} ${isUp ? '▲' : '▼'} ${signedPercent(percent)}`;
+
+        summaryEl.innerHTML = `
+          <p class="font-display text-2xl text-zinc-100 sm:text-4xl">${name}</p>
+          <p class="text-3xl font-semibold ${trendClass} sm:text-4xl">${price}</p>
+          <p class="whitespace-nowrap text-2xl font-semibold ${trendClass} sm:text-3xl">${delta}</p>
+        `;
+
+        document.title = `${name} | Placeholder Dashboard`;
+      }
+
+      function renderCandles(values) {
+        if (!Array.isArray(values) || values.length === 0) {
+          chartArea.textContent = 'No chart data available.';
+          return;
+        }
+
+        const candles = values
+          .slice()
+          .reverse()
+          .map((entry) => ({
+            open: toNumber(entry.open),
+            high: toNumber(entry.high),
+            low: toNumber(entry.low),
+            close: toNumber(entry.close)
+          }));
+
+        const width = 1200;
+        const height = 560;
+        const paddingX = 24;
+        const paddingY = 22;
+
+        const lows = candles.map((c) => c.low);
+        const highs = candles.map((c) => c.high);
+        const minLow = Math.min(...lows);
+        const maxHigh = Math.max(...highs);
+        const range = maxHigh - minLow || 1;
+        const step = (width - paddingX * 2) / candles.length;
+        const candleWidth = Math.max(5, step * 0.62);
+
+        const priceToY = (price) => height - paddingY - ((price - minLow) / range) * (height - paddingY * 2);
+
+        const svgCandles = candles
+          .map((candle, index) => {
+            const xCenter = paddingX + step * index + step / 2;
+            const yHigh = priceToY(candle.high);
+            const yLow = priceToY(candle.low);
+            const yOpen = priceToY(candle.open);
+            const yClose = priceToY(candle.close);
+            const top = Math.min(yOpen, yClose);
+            const bodyHeight = Math.max(3, Math.abs(yClose - yOpen));
+            const isUp = candle.close >= candle.open;
+            const color = isUp ? '#4fc329' : '#e35658';
+
+            return `
+              <line x1="${xCenter.toFixed(2)}" y1="${yHigh.toFixed(2)}" x2="${xCenter.toFixed(2)}" y2="${yLow.toFixed(2)}" stroke="${color}" stroke-width="2" />
+              <rect x="${(xCenter - candleWidth / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${candleWidth.toFixed(2)}" height="${bodyHeight.toFixed(2)}" fill="${color}" rx="1" />
+            `;
+          })
+          .join('');
+
+        chartArea.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" class="h-full w-full">
+            ${svgCandles}
+          </svg>
+        `;
+      }
+
+      async function fetchQuote(symbolValue) {
+        const url = `${API_BASE_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbolValue)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch quote data from backend.');
+        }
+        const data = await response.json();
+        return data[symbolValue] || data;
+      }
+
+      async function fetchTimeSeries(symbolValue, interval, outputsize) {
+        const url = `${API_BASE_URL}/api/stocks/time-series?symbol=${encodeURIComponent(symbolValue)}&interval=${encodeURIComponent(interval)}&outputsize=${encodeURIComponent(outputsize)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch chart data from backend.');
+        }
+        const data = await response.json();
+        if (!Array.isArray(data.values)) {
+          throw new Error('Failed to fetch chart data.');
+        }
+        return data.values;
+      }
+
+      async function loadChartByRange(rangeKey) {
+        const config = TIMEFRAME_CONFIG[rangeKey] || TIMEFRAME_CONFIG.lastWeek;
+        currentRangeKey = rangeKey in TIMEFRAME_CONFIG ? rangeKey : 'lastWeek';
+        chartArea.textContent = 'Loading chart...';
+        const values = await fetchTimeSeries(selectedSymbol, config.interval, config.outputsize);
+        renderCandles(values);
+
+        if (currentQuote) {
+          renderSummary(currentQuote, values);
+        }
+      }
+
+      async function hydrateStockDetail() {
+        try {
+          currentQuote = await fetchQuote(selectedSymbol);
+          renderSummary(currentQuote);
+          await loadChartByRange(currentRangeKey);
+        } catch (error) {
+          summaryEl.innerHTML = `
+            <p class="font-display text-2xl text-zinc-100 sm:text-4xl">${selectedSymbol}</p>
+            <p class="text-3xl font-semibold text-danger sm:text-4xl">Data unavailable</p>
+            <p class="text-2xl font-semibold text-zinc-300 sm:text-3xl">Check backend server or provider availability.</p>
+          `;
+          chartArea.textContent = 'Unable to load chart data.';
+          console.error(error);
+        }
+      }
+
+      hydrateStockDetail();
+
+      function closeTimeframeMenu() {
+        timeframeMenu.classList.add('hidden');
+        timeframeButton.setAttribute('aria-expanded', 'false');
+      }
+
+      function openTimeframeMenu() {
+        timeframeMenu.classList.remove('hidden');
+        timeframeButton.setAttribute('aria-expanded', 'true');
+      }
+
+      timeframeButton.addEventListener('click', function (event) {
+        event.stopPropagation();
+        const isHidden = timeframeMenu.classList.contains('hidden');
+        if (isHidden) {
+          openTimeframeMenu();
+        } else {
+          closeTimeframeMenu();
+        }
+      });
+
+      timeframeOptions.forEach(function (option) {
+        option.addEventListener('click', async function () {
+          const rangeKey = option.dataset.range;
+          const label = option.textContent.trim();
+          timeframeLabel.textContent = label;
+          closeTimeframeMenu();
+
+          try {
+            await loadChartByRange(rangeKey);
+          } catch (error) {
+            chartArea.textContent = 'Unable to load chart data.';
+            console.error(error);
+          }
+        });
+      });
+
+      document.addEventListener('click', function () {
+        closeTimeframeMenu();
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          closeTimeframeMenu();
+        }
+      });
+
+      function animateScrollTo(targetTop) {
+        const startTop = window.scrollY || window.pageYOffset;
+        const distance = targetTop - startTop;
+        const duration = 650;
+        const startTime = performance.now();
+
+        function easeInOutCubic(t) {
+          return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        function step(now) {
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = easeInOutCubic(progress);
+          window.scrollTo(0, startTop + distance * eased);
+          if (progress < 1) {
+            requestAnimationFrame(step);
+          }
+        }
+
+        requestAnimationFrame(step);
+      }
+
+      analyzeForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const query = analysisInput.value.trim();
+        if (!query) {
+          return;
+        }
+
+        analysisOutput.classList.remove('hidden');
+
+        requestAnimationFrame(() => {
+          const targetTop = chartSection.getBoundingClientRect().bottom + window.scrollY;
+          animateScrollTo(Math.max(0, targetTop));
+        });
+      });
+
+      analysisInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          analyzeForm.requestSubmit();
+        }
+      });
+    </script>
+  </body>
+</html>
