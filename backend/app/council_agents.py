@@ -1,10 +1,10 @@
-from google import genai
+from google.genai import types
 
 AGENTS = {
     "analyst": {
         "name": "The Analyst",
         "description": "Data-driven specialist focused on evidence and metrics",
-        "system_prompt": """You are The Analyst in a council of AI agents evaluating ideas.
+        "system_prompt": """You are The Analyst in a council of AI agents evaluating an investment thesis.
 
 Your role as a data specialist:
 - Demand evidence, data, and quantifiable metrics
@@ -27,11 +27,11 @@ IMPORTANT: During deliberation, you MUST use the send_message tool to communicat
 
 Remember: You are skeptical of gut feelings and prefer hard evidence. Push for measurable success criteria."""
     },
-    
+
     "diplomat": {
         "name": "The Diplomat",
         "description": "Consensus builder focused on finding common ground",
-        "system_prompt": """You are The Diplomat in a council of AI agents evaluating ideas.
+        "system_prompt": """You are The Diplomat in a council of AI agents evaluating an investment thesis.
 
 Your role as a consensus builder:
 - Bridge differences and find common ground between agents
@@ -55,11 +55,11 @@ IMPORTANT: During deliberation, you MUST use the send_message tool to facilitate
 
 Remember: Your goal is not to avoid conflict but to transform it into productive dialogue. Help the council move forward together."""
     },
-    
+
     "sentinel": {
         "name": "The Sentinel",
         "description": "Risk assessor focused on identifying potential dangers",
-        "system_prompt": """You are The Sentinel in a council of AI agents evaluating ideas.
+        "system_prompt": """You are The Sentinel in a council of AI agents evaluating an investment thesis.
 
 Your role as a risk assessor:
 - Identify potential risks, threats, and unintended consequences
@@ -83,11 +83,11 @@ IMPORTANT: During deliberation, you MUST use the send_message tool to directly c
 
 Remember: You are not a pessimist, but a realist. Your job is to ensure the council makes informed decisions with eyes wide open to potential dangers."""
     },
-    
+
     "explorer": {
         "name": "The Explorer",
         "description": "Innovator focused on possibilities and creative solutions",
-        "system_prompt": """You are The Explorer in a council of AI agents evaluating ideas.
+        "system_prompt": """You are The Explorer in a council of AI agents evaluating an investment thesis.
 
 Your role as an innovator:
 - Champion bold, creative, and forward-thinking approaches
@@ -113,10 +113,15 @@ Remember: You push boundaries while respecting legitimate concerns. Innovation r
     }
 }
 
-# ---
+AGENT_COLORS = {
+    "analyst": "#74b9ff",
+    "diplomat": "#55efc4",
+    "sentinel": "#ff7675",
+    "explorer": "#fdcb6e",
+}
+
 
 def get_tools():
-
     send_message_function = {
         "name": "send_message",
         "description": "Send a message to another agent in the council to request information or clarification.",
@@ -140,31 +145,23 @@ def get_tools():
             "required": ["recipient", "message"]
         }
     }
-
     return [send_message_function]
 
 
 def get_all_agents_info():
-    """Return list of all agents with their info"""
     return [
-        {
-            "id": agent_id,
-            "name": info["name"],
-            "description": info["description"]
-        }
+        {"id": agent_id, "name": info["name"], "description": info["description"]}
         for agent_id, info in AGENTS.items()
     ]
 
 
-def get_agent_system_prompt(agent: str) -> str:
-    """Get system prompt for a specific agent"""
-    if agent not in AGENTS:
-        raise ValueError(f"Agent {agent} not found")
-    return AGENTS[agent]["system_prompt"]
+def get_agent_system_prompt(agent_id: str) -> str:
+    if agent_id not in AGENTS:
+        raise ValueError(f"Agent {agent_id} not found")
+    return AGENTS[agent_id]["system_prompt"]
 
 
 def get_agent_display_name(agent_id: str) -> str:
-    """Get display name for a specific agent"""
     if agent_id not in AGENTS:
         raise ValueError(f"Agent {agent_id} not found")
     return AGENTS[agent_id]["name"]
