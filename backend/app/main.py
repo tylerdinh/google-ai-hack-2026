@@ -38,6 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+DIST_DIR     = FRONTEND_DIR / "dist"
 
 
 @asynccontextmanager
@@ -80,8 +81,9 @@ app.add_middleware(
 
 app.include_router(brave_router)
 
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+# Serve the built React SPA assets (JS/CSS chunks live under /assets/)
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
 
 # ---------------------------------------------------------------------------
@@ -352,24 +354,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/")
-async def root():
-    index = FRONTEND_DIR / "index.html"
-    if index.exists():
-        return FileResponse(str(index))
-    return {"message": "Stock Research API — see /docs"}
-
-
-@app.get("/stocks.html")
-async def stocks_page():
-    f = FRONTEND_DIR / "stocks.html"
-    return FileResponse(str(f)) if f.exists() else {"error": "not found"}
-
-
-@app.get("/stock.html")
-async def stock_page():
-    f = FRONTEND_DIR / "stock.html"
-    return FileResponse(str(f)) if f.exists() else {"error": "not found"}
 
 
 @app.post("/research/analyze", tags=["Research"])
@@ -648,6 +632,18 @@ async def get_time_series(symbol: str, interval: str = "1day", outputsize: int =
 async def search_stocks(query: str) -> list[dict]:
     """Search for stocks by symbol or company name."""
     return search_yahoo_symbols(query.upper())
+
+
+# ── SPA catch-all — must be LAST so all API routes take priority ──────────────
+@app.get("/")
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str = ""):
+    """Serve the React SPA for all non-API GET requests (client-side routing)."""
+    candidates = [DIST_DIR / "index.html", FRONTEND_DIR / "index.html"]
+    for candidate in candidates:
+        if candidate.exists():
+            return FileResponse(str(candidate))
+    return {"message": "Stock Research API — see /docs"}
 
 
 if __name__ == "__main__":
