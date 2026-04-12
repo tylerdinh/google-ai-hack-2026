@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { sb } from '../lib/supabase'
 import type { Session } from '@supabase/supabase-js'
+import { Plus, X, Search, LogOut, TrendingUp, TrendingDown, ChevronRight } from 'lucide-react'
 
 const API_BASE_URL = (window as any).STOCK_API_BASE_URL || ''
 
@@ -13,20 +14,17 @@ interface StockQuote {
   change?: number
   percent_change?: number
 }
-
 interface SeriesItem {
   close: string | number
   timestamp?: string
   datetime?: string
   date?: string
 }
-
 interface SearchResult {
   symbol: string
   name?: string
   exchange?: string
 }
-
 interface StockData {
   symbol: string
   name: string
@@ -46,7 +44,7 @@ function toCurrency(v: unknown) { return `$${toNumber(v).toFixed(2)}` }
 function signedValue(v: unknown) { return `$${Math.abs(toNumber(v)).toFixed(2)}` }
 function signedPercent(v: unknown) { return `${Math.abs(toNumber(v)).toFixed(2)}%` }
 function formatDelta(change: number, percent: number, isUp: boolean) {
-  return `${isUp ? '▲' : '▼'} ${signedValue(change)} ${isUp ? '▲' : '▼'} ${signedPercent(percent)}`
+  return `${signedValue(change)}  ${signedPercent(percent)}`
 }
 function fmtSparkDate(dt: string): string {
   if (!dt) return ''
@@ -54,7 +52,6 @@ function fmtSparkDate(dt: string): string {
   if (isNaN(d.getTime())) return ''
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })
 }
-
 function getSeriesChange(closes: number[]) {
   if (closes.length < 2) return null
   const first = closes[0], last = closes[closes.length - 1]
@@ -75,9 +72,9 @@ function renderSparklineSvg(closes: number[], dates: string[], isUp: boolean): s
     const x = lW + (i / (closes.length - 1)) * w
     return `${x.toFixed(2)},${dataY(c).toFixed(2)}`
   }).join(' ')
-  const stroke = isUp ? '#4fc329' : '#e35658'
-  const lc = 'rgba(161,161,170,0.6)'
-  const tc = 'rgba(174,125,183,0.38)'
+  const stroke = isUp ? '#4a7c59' : '#8b3a3c'
+  const lc = 'rgba(122,112,104,0.55)'
+  const tc = 'rgba(139,115,85,0.3)'
   const TICKS = [0, Math.floor((closes.length - 1) / 2), closes.length - 1]
   let tickSvg = '', dateLabelSvg = ''
   TICKS.forEach((dataIdx, ti) => {
@@ -88,13 +85,13 @@ function renderSparklineSvg(closes: number[], dates: string[], isUp: boolean): s
     if (anchor === 'start') tx = Math.max(lW, x)
     if (anchor === 'end')   tx = Math.min(lW + w, x)
     tickSvg      += `<line x1="${x.toFixed(1)}" y1="${axisY}" x2="${x.toFixed(1)}" y2="${(axisY + 5).toFixed(1)}" stroke="${tc}" stroke-width="1.5"/>`
-    dateLabelSvg += `<text x="${tx.toFixed(1)}" y="${(totalH - 2).toFixed(1)}" text-anchor="${anchor}" font-size="11" fill="${lc}" font-family="Lexend,sans-serif">${label}</text>`
+    dateLabelSvg += `<text x="${tx.toFixed(1)}" y="${(totalH - 2).toFixed(1)}" text-anchor="${anchor}" font-size="11" fill="${lc}" font-family="DM Sans,sans-serif">${label}</text>`
   })
   return `<svg viewBox="0 0 ${totalW} ${totalH}" preserveAspectRatio="none" class="h-full w-full">
-    <text x="0" y="13" font-size="12" fill="${lc}" font-family="Lexend,sans-serif">${fmtSpark(max)}</text>
-    <text x="0" y="${axisY - 2}" font-size="12" fill="${lc}" font-family="Lexend,sans-serif">${fmtSpark(min)}</text>
-    <line x1="${lW}" y1="2" x2="${lW}" y2="${axisY}" stroke="rgba(122,90,137,0.18)" stroke-width="1"/>
-    <polyline fill="none" stroke="${stroke}" stroke-width="2.6" points="${pts}" />
+    <text x="0" y="13" font-size="12" fill="${lc}" font-family="DM Sans,sans-serif">${fmtSpark(max)}</text>
+    <text x="0" y="${axisY - 2}" font-size="12" fill="${lc}" font-family="DM Sans,sans-serif">${fmtSpark(min)}</text>
+    <line x1="${lW}" y1="2" x2="${lW}" y2="${axisY}" stroke="rgba(122,112,104,0.15)" stroke-width="1"/>
+    <polyline fill="none" stroke="${stroke}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" points="${pts}" />
     <line x1="${lW}" y1="${axisY}" x2="${lW + w}" y2="${axisY}" stroke="${tc}" stroke-width="1"/>
     ${tickSvg}${dateLabelSvg}
   </svg>`
@@ -130,7 +127,7 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: (s: string)
             : formatDelta(toNumber(quote.change), toNumber(quote.percent_change), isUp),
           isUp,
           closes,
-          dates
+          dates,
         })
       } catch {
         setError(true)
@@ -139,32 +136,123 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: (s: string)
     hydrate()
   }, [symbol])
 
-  const trendCls = data ? (data.isUp ? 'text-success' : 'text-danger') : 'text-success'
+  const isUp = data?.isUp ?? true
 
   return (
     <div
       onClick={() => navigate(`/stock?symbol=${encodeURIComponent(symbol)}`)}
-      className="glass-card relative grid w-full cursor-pointer grid-cols-1 items-center gap-2 rounded-2xl px-4 py-4 transition hover:-translate-y-px hover:border-lavender/80 sm:grid-cols-[1.4fr_1fr_1fr_190px] sm:gap-3 sm:px-5 sm:py-4"
+      className="glass-card fade-up"
+      style={{
+        position: 'relative',
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gap: '14px',
+        padding: '20px 22px',
+        borderRadius: '14px',
+        cursor: 'pointer',
+        transition: 'box-shadow 0.18s, border-color 0.18s, transform 0.18s',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
+        ;(e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-lg)'
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.transform = ''
+        ;(e.currentTarget as HTMLElement).style.boxShadow = ''
+      }}
     >
-      <span className="font-display text-2xl text-zinc-100 sm:text-3xl">{data?.name ?? symbol}</span>
-      <span className={`text-3xl font-semibold sm:text-4xl ${trendCls}`}>
-        {data?.price ?? '$--.--'}
-      </span>
-      <span className={`whitespace-nowrap text-lg font-semibold sm:text-2xl ${trendCls}`}>
-        {error ? 'Data unavailable' : (data?.delta ?? 'Loading…')}
-      </span>
-      <span
-        className="glass-slot h-20 w-full rounded-lg"
-        dangerouslySetInnerHTML={{
-          __html: data && data.closes.length > 1
-            ? renderSparklineSvg(data.closes, data.dates, data.isUp)
-            : ''
-        }}
-      />
+      {/* Desktop layout via inline grid */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
+        {/* Name */}
+        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+          <p
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontSize: '1.5rem',
+              fontWeight: 400,
+              color: 'var(--ink)',
+              margin: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {data?.name ?? symbol}
+          </p>
+        </div>
+
+        {/* Price */}
+        <div style={{ flex: '0 0 auto' }}>
+          <p
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontSize: '1.8rem',
+              fontWeight: 400,
+              color: isUp ? 'var(--ok)' : 'var(--no)',
+              margin: 0,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {data?.price ?? '$--.--'}
+          </p>
+        </div>
+
+        {/* Delta */}
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          {isUp
+            ? <TrendingUp size={14} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+            : <TrendingDown size={14} style={{ color: 'var(--no)', flexShrink: 0 }} />
+          }
+          <span style={{ fontSize: '0.82rem', fontWeight: 400, color: isUp ? 'var(--ok)' : 'var(--no)', whiteSpace: 'nowrap' }}>
+            {error ? 'Data unavailable' : (data?.delta ?? 'Loading…')}
+          </span>
+        </div>
+
+        {/* Sparkline */}
+        <div
+          className="glass-slot"
+          style={{ flex: '0 0 180px', height: '64px', borderRadius: '8px', overflow: 'hidden' }}
+          dangerouslySetInnerHTML={{
+            __html: data && data.closes.length > 1
+              ? renderSparklineSvg(data.closes, data.dates, data.isUp)
+              : ''
+          }}
+        />
+
+        {/* Navigate hint */}
+        <ChevronRight size={16} style={{ color: 'var(--mist)', flexShrink: 0 }} />
+      </div>
+
+      {/* Remove button */}
       <button
         onClick={e => { e.stopPropagation(); onRemove(symbol) }}
-        className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-white/5 text-xs text-zinc-500 transition hover:bg-danger/20 hover:text-danger sm:right-4 sm:top-4"
-      >✕</button>
+        className="btn-icon"
+        aria-label={`Remove ${symbol}`}
+        style={{
+          position: 'absolute', top: '14px', right: '14px',
+          width: '28px', height: '28px', borderRadius: '50%',
+          background: 'transparent',
+          border: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+          color: 'var(--mist)',
+          transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget
+          el.style.background = 'rgba(139,58,60,0.10)'
+          el.style.color = 'var(--no)'
+          el.style.borderColor = 'rgba(139,58,60,0.3)'
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget
+          el.style.background = 'transparent'
+          el.style.color = 'var(--mist)'
+          el.style.borderColor = 'var(--border)'
+        }}
+      >
+        <X size={13} />
+      </button>
     </div>
   )
 }
@@ -184,7 +272,6 @@ export default function WatchlistPage() {
   const searchBtnRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // ── Auth
   useEffect(() => {
     sb.auth.getSession().then(({ data: { session } }) => {
       if (!session) { navigate('/'); return }
@@ -198,7 +285,6 @@ export default function WatchlistPage() {
     return () => subscription.unsubscribe()
   }, [navigate])
 
-  // ── Close search on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (
@@ -212,7 +298,10 @@ export default function WatchlistPage() {
 
   async function apiFetch(path: string, options: RequestInit = {}) {
     const { data } = await sb.auth.getSession()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string>) }
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    }
     if (data.session?.access_token) headers['Authorization'] = 'Bearer ' + data.session.access_token
     return fetch(API_BASE_URL + path, { ...options, headers })
   }
@@ -280,64 +369,192 @@ export default function WatchlistPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 pb-10 pt-0 font-body text-white sm:pb-12">
-      <header className="relative left-1/2 mb-3 w-screen -translate-x-1/2 flex items-center justify-between gap-4 rounded-b-xl border-b border-panelBorder/25 bg-[#23182f]/95 px-6 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.18)] sm:px-8">
-        <h1 className="font-display text-4xl leading-tight text-lavender sm:text-5xl">Consilium</h1>
-        <div className="flex items-center gap-3">
+    <main
+      style={{
+        minHeight: '100vh',
+        background: 'var(--cream)',
+        fontFamily: '"DM Sans", system-ui, sans-serif',
+        color: 'var(--ink-soft)',
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '18px 32px',
+          borderBottom: '1px solid var(--border)',
+          background: 'rgba(249,247,245,0.94)',
+          backdropFilter: 'blur(16px)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 30,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: '"Cormorant Garamond", Georgia, serif',
+            fontSize: '1.6rem',
+            fontWeight: 400,
+            color: 'var(--ink)',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Consilium
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           {session?.user?.email && (
-            <span className="hidden text-xs text-zinc-400 sm:block">{session.user.email}</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--mist)', display: 'none' }} className="sm:block">
+              {session.user.email}
+            </span>
           )}
           <button
             onClick={async () => { await sb.auth.signOut(); navigate('/') }}
-            className="rounded-full border border-panelBorder/70 bg-white/5 px-4 py-2 text-sm font-semibold text-lavender transition hover:border-lavender/80"
-          >Log out</button>
+            className="btn btn-secondary"
+            style={{ padding: '8px 16px', gap: '7px', fontSize: '0.78rem' }}
+          >
+            <LogOut size={13} />
+            Sign out
+          </button>
         </div>
       </header>
 
-      {/* Search button + panel */}
-      <div className="mb-6 flex justify-end">
-        <div className="relative">
-          <button ref={searchBtnRef} onClick={() => { setSearchOpen(v => !v); setTimeout(() => inputRef.current?.focus(), 50) }}
-            className="glass-card flex h-12 w-12 items-center justify-center rounded-full text-3xl leading-none text-lavender transition hover:border-lavender/80">
-            <span className="-translate-y-[3px]">+</span>
-          </button>
+      {/* Page body */}
+      <div style={{ maxWidth: '820px', margin: '0 auto', padding: '32px 24px 64px' }}>
 
-          {searchOpen && (
-            <div ref={searchPanelRef} className="absolute right-0 top-14 z-20 w-[min(92vw,22rem)] rounded-2xl border border-panelBorder/70 bg-panel/95 p-3 shadow-glow backdrop-blur">
-              <label className="mb-2 block text-sm font-semibold text-lavender/90">Search a stock</label>
-              <input ref={inputRef} type="text" value={query} onChange={handleSearchInput}
-                onKeyDown={handleSearchKeyDown} placeholder="Ticker or company name" autoComplete="off"
-                className="w-full rounded-xl border border-panelBorder/70 bg-canvas/80 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-400 focus:border-lavender" />
-              {searchStatus && <div className="mt-2 text-xs text-zinc-400">{searchStatus}</div>}
-              <div className="mt-2 max-h-72 overflow-auto space-y-2">
-                {suggestions.length === 0 && query.trim() && !searchStatus.includes('Searching') && (
-                  <div className="rounded-xl border border-dashed border-lavender/30 px-3 py-2 text-sm text-zinc-400">No matches found.</div>
+        {/* Page title + action bar */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '28px' }}>
+          <div>
+            <p className="section-label">Portfolio</p>
+            <h1
+              style={{
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontSize: '2.2rem',
+                fontWeight: 300,
+                color: 'var(--ink)',
+                margin: 0,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Watchlist
+            </h1>
+          </div>
+
+          {/* Add stock */}
+          <div style={{ position: 'relative' }}>
+            <button
+              ref={searchBtnRef}
+              onClick={() => { setSearchOpen(v => !v); setTimeout(() => inputRef.current?.focus(), 50) }}
+              className="btn btn-primary"
+              style={{ gap: '7px', padding: '10px 18px', fontSize: '0.8rem' }}
+            >
+              <Plus size={15} />
+              Add stock
+            </button>
+
+            {searchOpen && (
+              <div
+                ref={searchPanelRef}
+                className="timeframe-menu fade-up"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 10px)',
+                  width: 'min(92vw, 22rem)',
+                  borderRadius: '14px',
+                  padding: '18px',
+                  zIndex: 40,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <Search size={14} style={{ color: 'var(--mist)' }} />
+                  <span className="section-label" style={{ marginBottom: 0 }}>Search stocks</span>
+                </div>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={handleSearchInput}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Ticker or company name"
+                  autoComplete="off"
+                  className="input-field"
+                  style={{ marginBottom: '10px' }}
+                />
+                {searchStatus && (
+                  <p style={{ fontSize: '0.72rem', color: 'var(--mist)', marginBottom: '8px' }}>{searchStatus}</p>
                 )}
-                {suggestions.map((item, i) => (
-                  <button key={item.symbol} onClick={() => selectSuggestion(item.symbol)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left transition ${i === activeIdx ? 'border-lavender bg-white/10 ring-1 ring-lavender/60' : 'border-panelBorder/70 bg-canvas/70 hover:border-lavender hover:bg-white/5'}`}>
-                    <div className="text-sm font-semibold text-zinc-100">{item.symbol}</div>
-                    <div className="text-xs text-zinc-400">{[item.name, item.exchange].filter(Boolean).join(' • ')}</div>
-                  </button>
-                ))}
+                <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {suggestions.length === 0 && query.trim() && !searchStatus.includes('Searching') && (
+                    <p style={{ fontSize: '0.76rem', color: 'var(--mist)', padding: '8px 0' }}>No matches found.</p>
+                  )}
+                  {suggestions.map((item, i) => (
+                    <button
+                      key={item.symbol}
+                      onClick={() => selectSuggestion(item.symbol)}
+                      style={{
+                        width: '100%',
+                        background: i === activeIdx ? 'rgba(139,115,85,0.08)' : 'transparent',
+                        border: `1px solid ${i === activeIdx ? 'rgba(139,115,85,0.3)' : 'var(--border)'}`,
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        transition: 'background 0.12s, border-color 0.12s',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--ink)' }}>{item.symbol}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--mist)', marginTop: '2px' }}>
+                        {[item.name, item.exchange].filter(Boolean).join(' · ')}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Stock list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {stocks.length === 0 ? (
+            <div
+              className="glass-slot fade-up"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '16px',
+                padding: '64px 32px',
+                textAlign: 'center',
+                minHeight: '260px',
+              }}
+            >
+              <Plus size={28} style={{ color: 'var(--mist)', marginBottom: '16px', opacity: 0.6 }} />
+              <p
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontSize: '1.4rem',
+                  fontWeight: 300,
+                  color: 'var(--stone)',
+                  margin: 0,
+                }}
+              >
+                Add a stock to begin
+              </p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--mist)', marginTop: '8px' }}>
+                Use the button above to search and add stocks to your watchlist.
+              </p>
             </div>
+          ) : (
+            stocks.map(symbol => (
+              <StockCard key={symbol} symbol={symbol} onRemove={removeStock} />
+            ))
           )}
         </div>
       </div>
-
-      {/* Stocks list */}
-      <section className="flex flex-1 flex-col space-y-3">
-        {stocks.length === 0 ? (
-          <div className="glass-card flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-lavender/40 px-6 py-8 text-center text-zinc-300">
-            <p className="font-display text-3xl text-lavender/90 sm:text-4xl">Click the + button to add a stock.</p>
-          </div>
-        ) : (
-          stocks.map(symbol => (
-            <StockCard key={symbol} symbol={symbol} onRemove={removeStock} />
-          ))
-        )}
-      </section>
     </main>
   )
 }
