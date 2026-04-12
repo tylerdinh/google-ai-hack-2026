@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import AsyncIterator, AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,10 +19,13 @@ from pydantic_ai import BinaryContent
 
 load_dotenv()
 
-from app.agent import StockDeps, agent  # noqa: E402
+from app.agent import StockDeps, agent                              # noqa: E402
 from app.brave import gather_brave_context, compile_context_text, router as brave_router  # noqa: E402
-from app.council import CouncilOrchestrator  # noqa: E402
-from app.models import AnalyzeRequest  # noqa: E402
+from app.council import CouncilOrchestrator                         # noqa: E402
+from app.database import save_analysis, get_user_analyses, get_analysis_by_id  # noqa: E402
+from app.models import AnalyzeRequest                               # noqa: E402
+from auth import get_current_user, get_optional_user                # noqa: E402
+from supabase_client import validate_supabase_config                # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +40,11 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if not os.getenv("GEMINI_API_KEY"):
         logger.warning("GEMINI_API_KEY is not set — agent calls will fail")
+    try:
+        validate_supabase_config()
+        logger.info("Supabase configured ✓")
+    except ValueError as e:
+        logger.warning("Supabase not fully configured: %s", e)
     logger.info("Stock Research API ready")
     yield
     logger.info("Stock Research API shut down")
@@ -54,7 +62,7 @@ app = FastAPI(
         "AI-powered deep equity research. Brave web search feeds context into a "
         "PydanticAI agent, then a council of AI agents debates the findings."
     ),
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -75,7 +83,6 @@ if FRONTEND_DIR.exists():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _build_prompt(ticker: str, request: AnalyzeRequest, brave_context: str) -> str | list:
     image_parts: list[BinaryContent] = []
@@ -131,9 +138,53 @@ def _extract_final_text(message_history: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Auth routes
 # ---------------------------------------------------------------------------
 
+@app.get("/auth/me", tags=["Auth"])
+async def me(user=Depends(get_current_user)):
+    """Return the currently authenticated user's profile."""
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Analysis history routes
+# ---------------------------------------------------------------------------
+
+@app.get("/analyses", tags=["Analyses"])
+async def list_analyses(user=Depends(get_current_user)):
+    """Return the authenticated user's 30 most recent analyses."""
+    rows = await get_user_analyses(user.id)
+    return {"analyses": rows, "total": len(rows)}
+
+
+@app.get("/analyses/{analysis_id}", tags=["Analyses"])
+async def get_analysis(analysis_id: str, user=Depends(get_current_user)):
+    """Return a single analysis owned by the authenticated user."""
+    row = await get_analysis_by_id(analysis_id, user.id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return row
+
+
+@app.delete("/analyses/{analysis_id}", tags=["Analyses"])
+async def delete_analysis(analysis_id: str, user=Depends(get_current_user)):
+    """Delete a single analysis owned by the authenticated user."""
+    from supabase_client import get_admin_client
+    try:
+        get_admin_client().table("analyses").delete().eq("id", analysis_id).eq("user_id", user.id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": analysis_id}
+
+
+# ---------------------------------------------------------------------------
+# Research route
+# ---------------------------------------------------------------------------
 
 @app.get("/health", tags=["Meta"])
 async def health_check() -> dict[str, str]:
@@ -149,15 +200,25 @@ async def root():
 
 
 @app.post("/research/analyze", tags=["Research"])
-async def analyze_stock(request: AnalyzeRequest) -> StreamingResponse:
+async def analyze_stock(
+    request: AnalyzeRequest,
+    raw_request: Request,
+) -> StreamingResponse:
     ticker = request.ticker.upper().strip()
     intent = request.intent
+
+    # Resolve user from Authorization header (optional — no error if absent)
+    user = await get_optional_user(raw_request)
+    user_id: str | None = user.id if user else None
 
     async def event_stream() -> AsyncGenerator[str, None]:
         def sse(payload: dict) -> str:
             return f"data: {json.dumps(payload)}\n\n"
 
         queue: asyncio.Queue[dict] = asyncio.Queue()
+
+        # Track council outcome so we can save it after the debate
+        council_outcome: dict = {}
 
         # ── Phase 1: Brave web research ──────────────────────────────
         yield sse({"type": "phase", "phase": "brave", "message": "Starting web research..."})
@@ -232,12 +293,18 @@ async def analyze_stock(request: AnalyzeRequest) -> StreamingResponse:
             while not council_task.done():
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=0.05)
+                    # Capture verdict data before forwarding to client
+                    if event.get("type") == "council_verdict":
+                        council_outcome = event
                     yield sse(event)
                 except asyncio.TimeoutError:
                     pass
 
             while not queue.empty():
-                yield sse(queue.get_nowait())
+                event = queue.get_nowait()
+                if event.get("type") == "council_verdict":
+                    council_outcome = event
+                yield sse(event)
 
             exc = council_task.exception()
             if exc:
@@ -249,7 +316,22 @@ async def analyze_stock(request: AnalyzeRequest) -> StreamingResponse:
             yield sse({"type": "error", "detail": str(exc)})
             return
 
-        yield sse({"type": "done", "ticker": ticker})
+        # ── Persist to database (authenticated users only) ────────────
+        analysis_id: str | None = None
+        if user_id and council_outcome:
+            analysis_id = await save_analysis(
+                user_id=user_id,
+                ticker=ticker,
+                intent=intent,
+                analysis_text=analysis_text,
+                council_verdict=council_outcome.get("decision", "rejected"),
+                approve_count=council_outcome.get("approve", 0),
+                reject_count=council_outcome.get("reject", 0),
+            )
+            if analysis_id:
+                logger.info("Saved analysis %s for user %s", analysis_id, user_id)
+
+        yield sse({"type": "done", "ticker": ticker, "analysis_id": analysis_id})
 
     return StreamingResponse(
         event_stream(),

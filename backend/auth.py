@@ -2,94 +2,76 @@
 Authentication utilities for FastAPI.
 Provides:
 - get_current_user: FastAPI dependency that validates Supabase JWT tokens
-- Token extraction and error handling
+- get_optional_user: same but returns None instead of 401 when unauthenticated
 """
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPBasicCredentials
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AuthApiError
 
 from supabase_client import get_admin_client
 
-# FastAPI security scheme for automatic Swagger UI support
+# FastAPI security scheme — adds Authorize button to Swagger UI
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(credentials: HTTPBasicCredentials = Depends(security)):
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """
-    FastAPI dependency to extract and validate the current user from JWT token.
-    Extracts Bearer token from Authorization header, validates it with Supabase,
-    and returns the authenticated user object.
-    Usage:
-        @app.get("/api/protected")
-        async def protected_endpoint(user = Depends(get_current_user)):
-            return {"user_id": user.id, "email": user.email}
-    Args:
-        credentials: HTTPBearer credentials (extracted automatically by FastAPI)
-    Returns:
-        User object from Supabase Auth with id, email, user_metadata, etc.
-    Raises:
-        HTTPException: 401 if token is invalid or expired
+    FastAPI dependency: extract & validate Bearer JWT, return Supabase user.
+    Raises HTTP 401 if the token is missing or invalid.
     """
-    token = credentials
-
-    try:
-        # Validate token using Supabase Admin client.
-        # get_user() calls Supabase's JWT verification internally.
-        admin_client = get_admin_client()
-        user = admin_client.auth.get_user(token)
-        return user
-    except AuthApiError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    return await _resolve_user(credentials.credentials)
 
 
-async def get_current_user_with_token(credentials: HTTPBasicCredentials = Depends(security)):
+async def get_current_user_with_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """
-    FastAPI dependency that returns both the authenticated user AND the JWT token.
-    
-    Used for operations that need to enforce RLS at the database level.
-    Returns tuple: (user, token)
-    
-    Usage:
-        @app.post("/api/protected")
-        async def protected_endpoint(user_token = Depends(get_current_user_with_token)):
-            user, token = user_token
-            client = get_user_client(token)  # RLS enforced
-            return {"user_id": user.id}
-    
-    Returns:
-        Tuple of (user, token) where user is the auth object and token is the JWT string
-        
-    Raises:
-        HTTPException: 401 if token is invalid or expired
+    FastAPI dependency: returns (user, token) tuple.
+    Used when the caller also needs the raw token to create a user-scoped client.
     """
     token = credentials.credentials
-    
+    user = await _resolve_user(token)
+    return user, token
+
+
+async def get_optional_user(request: Request):
+    """
+    FastAPI dependency: returns the Supabase user if a valid Bearer token is
+    present, otherwise returns None.  Never raises 401.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:]
+    try:
+        return await _resolve_user(token)
+    except HTTPException:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+async def _resolve_user(token: str):
+    """Validate a JWT with Supabase and return the user object."""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     try:
         admin_client = get_admin_client()
-        user = admin_client.auth.get_user(token)
-        return user, token
-    
+        response = admin_client.auth.get_user(token)
+        return response.user
     except AuthApiError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {str(e)}",
+            detail=f"Invalid or expired token: {e}",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception:
