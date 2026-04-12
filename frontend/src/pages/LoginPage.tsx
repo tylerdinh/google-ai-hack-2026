@@ -14,9 +14,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate('/stocks')
-    })
+    // onAuthStateChange handles both pre-existing sessions and OAuth redirects
+    // (SIGNED_IN fires when Supabase processes the #access_token hash after redirect)
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
       if (session) navigate('/stocks')
     })
@@ -48,7 +47,7 @@ export default function LoginPage() {
   async function handleOAuth(provider: 'google' | 'github') {
     const { error } = await sb.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: window.location.origin + '/stocks' }
+      options: { redirectTo: window.location.origin + '/' }
     })
     if (error) setError(error.message)
   }

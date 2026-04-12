@@ -273,14 +273,18 @@ export default function WatchlistPage() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { navigate('/'); return }
-      setSession(session)
-      loadWatchlist(session)
-    })
+    // onAuthStateChange fires INITIAL_SESSION synchronously once auth is resolved,
+    // making it reliable for both email/password and OAuth redirect flows.
     const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') { navigate('/'); return }
-      setSession(session)
+      if (session) {
+        setSession(session)
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          loadWatchlist(session)
+        }
+      } else if (event === 'INITIAL_SESSION') {
+        navigate('/')
+      }
     })
     return () => subscription.unsubscribe()
   }, [navigate])
@@ -297,12 +301,11 @@ export default function WatchlistPage() {
   }, [])
 
   async function apiFetch(path: string, options: RequestInit = {}) {
-    const { data } = await sb.auth.getSession()
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     }
-    if (data.session?.access_token) headers['Authorization'] = 'Bearer ' + data.session.access_token
+    if (session?.access_token) headers['Authorization'] = 'Bearer ' + session.access_token
     return fetch(API_BASE_URL + path, { ...options, headers })
   }
 

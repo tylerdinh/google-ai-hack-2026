@@ -428,14 +428,16 @@ export default function StockDetailPage() {
   const audioPlayingRef = useRef(false)
 
   useEffect(() => {
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { navigate('/'); return }
-      setSession(session)
-      loadHistory(session)
-    })
     const { data: { subscription } } = sb.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') { navigate('/'); return }
-      setSession(session)
+      if (session) {
+        setSession(session)
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          loadHistory(session)
+        }
+      } else if (event === 'INITIAL_SESSION') {
+        navigate('/')
+      }
     })
     return () => subscription.unsubscribe()
   }, [navigate])
