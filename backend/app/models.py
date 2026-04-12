@@ -25,6 +25,10 @@ class AnalyzeRequest(BaseModel):
     ticker: str = Field(
         description="Stock ticker symbol to analyze (e.g. 'AAPL', 'TSLA')."
     )
+    intent: str = Field(
+        default="Provide a comprehensive stock analysis.",
+        description="What the user wants to analyze (e.g. 'Is this a good long-term investment?').",
+    )
     context: list[ContextItem] = Field(
         default_factory=list,
         description=(
