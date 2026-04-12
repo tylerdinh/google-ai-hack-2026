@@ -82,8 +82,13 @@ async def search_brave(query: str) -> list[dict]:
     }
     params = {"q": query, "count": MAX_RESULTS}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(BRAVE_SEARCH_URL, headers=headers, params=params)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
+        try:
+            resp = await client.get(BRAVE_SEARCH_URL, headers=headers, params=params)
+        except httpx.ConnectTimeout:
+            raise HTTPException(status_code=504, detail="Brave API connection timed out — check network or API key")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Brave API request timed out")
         if resp.status_code != 200:
             raise HTTPException(
                 status_code=resp.status_code,
