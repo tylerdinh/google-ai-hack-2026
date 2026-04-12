@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -155,6 +156,96 @@ def _extract_all_text(message_history: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Binary-intent detection
+# ---------------------------------------------------------------------------
+
+# Strict fallback regex — only strong yes/no patterns
+_BINARY_FALLBACK_RE = re.compile(
+    r"\b("
+    r"should\s+(i|we|they)\s+(buy|sell|hold|invest|short)\b|"
+    r"(is|are)\s+(this|it|they|these)\s+a?\s*(good|bad|safe|worth|risky)\s*(investment|buy|stock|pick|idea)?\b|"
+    r"(good|bad)\s+(long.?term|short.?term|investment|buy|idea)\b|"
+    r"\b(recommend|advise)\b|"
+    r"worth\s+(buying|investing)\b|"
+    r"(buy|hold)\s+or\s+(sell|hold|buy)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+async def _classify_binary_intent(intent: str) -> bool:
+    """Return True when the user's question expects a yes/no decision.
+
+    Uses Gemini flash-lite for accuracy; falls back to regex on error.
+    """
+    from google import genai
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    prompt = (
+        'Does the following question expect a yes/no (binary) answer — '
+        'i.e. should the council vote approve or reject it?\n'
+        'Answer only "yes" or "no".\n\n'
+        'Examples:\n'
+        '  "Should I buy AAPL?" → yes\n'
+        '  "Is AAPL a good long-term investment?" → yes\n'
+        '  "Should I hold or sell?" → yes\n'
+        '  "What price should I sell AAPL at?" → no\n'
+        '  "What are AAPL sell targets?" → no\n'
+        '  "Analyze AAPL fundamentals" → no\n'
+        '  "What is the market cap of AAPL?" → no\n\n'
+        f'Question: "{intent}"'
+    )
+    try:
+        resp = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        answer = (resp.text or "").strip().lower()
+        result = answer.startswith("yes")
+        logger.info("Binary classification for '%s' → %s (raw: %s)", intent, result, answer)
+        return result
+    except Exception:
+        logger.warning("Binary classification via Gemini failed, using regex fallback", exc_info=True)
+        return bool(_BINARY_FALLBACK_RE.search(intent))
+
+
+# ---------------------------------------------------------------------------
+# Bullet-point summary
+# ---------------------------------------------------------------------------
+
+async def _summarize_to_bullets(ticker: str, analysis_text: str) -> list[str]:
+    """Condense the full analysis into 5 crisp bullet points via Gemini flash-lite."""
+    from google import genai
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    prompt = (
+        f"Summarize this {ticker} stock analysis into exactly 5 bullet points.\n"
+        "Rules:\n"
+        "- Each bullet = one short sentence, under 20 words.\n"
+        "- Start every bullet with '- '.\n"
+        "- Output only the 5 bullets, nothing else.\n\n"
+        f"{analysis_text[:4000]}"
+    )
+    try:
+        resp = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        lines = (resp.text or "").strip().splitlines()
+        bullets = [
+            ln.lstrip("-•* ").strip()
+            for ln in lines
+            if ln.strip() and ln.strip()[0] in "-•*"
+        ]
+        return bullets[:6] if bullets else []
+    except Exception:
+        logger.warning("Bullet summary generation failed", exc_info=True)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
 
@@ -256,14 +347,23 @@ async def analyze_stock(
     user = await get_optional_user(raw_request)
     user_id: str | None = user.id if user else None
 
+    # Classify intent before streaming begins
+    is_binary = await _classify_binary_intent(intent)
+    logger.info("Intent '%s' → binary=%s", intent, is_binary)
+
     async def event_stream() -> AsyncGenerator[str, None]:
         def sse(payload: dict) -> str:
             return f"data: {json.dumps(payload)}\n\n"
 
         queue: asyncio.Queue[dict] = asyncio.Queue()
-
-        # Track council outcome so we can save it after the debate
         council_outcome: dict = {}
+
+        # ── Intent classification ─────────────────────────────────────
+        yield sse({
+            "type": "intent_classified",
+            "is_binary": is_binary,
+            "intent": intent,
+        })
 
         # ── Phase 1: Brave web research ──────────────────────────────
         yield sse({"type": "phase", "phase": "brave", "message": "Starting web research..."})
@@ -308,12 +408,16 @@ async def analyze_stock(
             images = deps.image_store
             analysis_text = _extract_all_text(message_history)
 
+            # Generate bullet summary (passed to client; full text goes to council)
+            bullets = await _summarize_to_bullets(ticker, analysis_text)
+
             yield sse({
                 "type": "agent_done",
                 "ticker": ticker,
                 "message_history": message_history,
                 "images": images,
                 "analysis_text": analysis_text,
+                "bullets": bullets,
             })
 
         except Exception as exc:
@@ -322,58 +426,58 @@ async def analyze_stock(
             yield sse({"type": "error", "detail": str(exc)})
             return
 
-        # ── Phase 3: Council debate ──────────────────────────────────
-        yield sse({"type": "phase", "phase": "council", "message": "Convening the council..."})
+        # ── Phase 3: Council debate (binary questions only) ───────────
+        if is_binary:
+            yield sse({"type": "phase", "phase": "council", "message": "Convening the council..."})
 
-        proposal = _build_council_proposal(ticker, intent, analysis_text)
-        council = CouncilOrchestrator(
-            discussion_id=str(uuid.uuid4()),
-            idea=proposal,
-            event_queue=queue,
-        )
+            proposal = _build_council_proposal(ticker, intent, analysis_text)
+            council = CouncilOrchestrator(
+                discussion_id=str(uuid.uuid4()),
+                idea=proposal,
+                event_queue=queue,
+            )
 
-        council_task: asyncio.Task = asyncio.create_task(council.run_debate())
+            council_task: asyncio.Task = asyncio.create_task(council.run_debate())
 
-        try:
-            while not council_task.done():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=0.05)
-                    # Capture verdict data before forwarding to client
+            try:
+                while not council_task.done():
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=0.05)
+                        if event.get("type") == "council_verdict":
+                            council_outcome = event
+                        yield sse(event)
+                    except asyncio.TimeoutError:
+                        pass
+
+                while not queue.empty():
+                    event = queue.get_nowait()
                     if event.get("type") == "council_verdict":
                         council_outcome = event
                     yield sse(event)
-                except asyncio.TimeoutError:
-                    pass
 
-            while not queue.empty():
-                event = queue.get_nowait()
-                if event.get("type") == "council_verdict":
-                    council_outcome = event
-                yield sse(event)
+                exc = council_task.exception()
+                if exc:
+                    raise exc
 
-            exc = council_task.exception()
-            if exc:
-                raise exc
-
-        except Exception as exc:
-            logger.exception("Council debate failed for %s", ticker)
-            council_task.cancel()
-            yield sse({"type": "error", "detail": str(exc)})
-            return
+            except Exception as exc:
+                logger.exception("Council debate failed for %s", ticker)
+                council_task.cancel()
+                yield sse({"type": "error", "detail": str(exc)})
+                return
 
         # ── Persist to database (authenticated users only) ────────────
         analysis_id: str | None = None
-        if user_id and council_outcome:
-            # Satisfy the FK constraint: ensure the stock is in the watchlist
+        if user_id:
+            verdict = council_outcome.get("decision", "approved") if is_binary else "approved"
             await upsert_stock(user_id, ticker)
             analysis_id = await save_analysis(
                 user_id=user_id,
                 ticker_name=ticker,
                 prompt=intent,
                 advice=analysis_text,
-                council_verdict=council_outcome.get("decision", "rejected"),
-                approve_count=council_outcome.get("approve", 0),
-                reject_count=council_outcome.get("reject", 0),
+                council_verdict=verdict,
+                approve_count=council_outcome.get("approve", 0) if is_binary else 0,
+                reject_count=council_outcome.get("reject", 0) if is_binary else 0,
             )
             if analysis_id:
                 logger.info("Saved analysis %s for user %s", analysis_id, user_id)
