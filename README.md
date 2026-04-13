@@ -2,6 +2,8 @@
 
 An AI-powered stock deep research platform to ask questions about any stock and get an expert analysis, with a live multi-agent council debate using the LLM-as-a-judge technique for evaluation on binary questions.
 
+**Honorable mention at WashU Google Dev Fest 2026!**
+
 ## Stack
 
 - **Backend** — Python, FastAPI, PydanticAI, Google Gemini, Brave Search, ElevenLabs, yfinance, Supabase
